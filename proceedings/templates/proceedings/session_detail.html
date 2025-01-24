@@ -12,66 +12,66 @@
 
     <h1 class="mb-4">{{ session.title }}</h1>
 
-    <!-- Summary Section -->
-    {% with pdf_button='<a href="'|add:session.url|add:'" class="btn btn-primary mt-3" target="_blank">View Original PDF</a>' %}
-        {% include "proceedings/components/collapsible_section.html" with section_id="summaryContent" title="Session Summary" content=session.summary extra_content=pdf_button %}
-    {% endwith %}
+    {# Summary Section #}
+    <div class="card mb-4">
+        <div class="card-header" role="button" data-bs-toggle="collapse" data-bs-target="#summaryContent">
+            <div class="d-flex justify-content-between align-items-center">
+                <h2 class="h5 mb-0">Session Summary</h2>
+                <span class="collapse-icon">▼</span>
+            </div>
+        </div>
+        <div id="summaryContent" class="collapse show">
+            <div class="card-body">
+                <div class="markdown-content">
+                    {{ session.summary }}
+                </div>
+                <a href="{{ session.url }}" class="btn btn-primary mt-3" target="_blank">View Original PDF</a>
+            </div>
+        </div>
+    </div>
 
-    <!-- Topics Section -->
-    {% include "proceedings/components/collapsible_section.html" with section_id="topicsContent" title="Legislative Topics" content=session.topics %}
+    {# Topics Section #}
+    <div class="card mb-4">
+        <div class="card-header" role="button" data-bs-toggle="collapse" data-bs-target="#topicsContent">
+            <div class="d-flex justify-content-between align-items-center">
+                <h2 class="h5 mb-0">Legislative Topics</h2>
+                <span class="collapse-icon">▼</span>
+            </div>
+        </div>
+        <div id="topicsContent" class="collapse show">
+            <div class="card-body">
+                {% if session.topics %}
+                    <div id="topicsData" class="markdown-content">
+                        {{ session.topics }}
+                    </div>
+                {% else %}
+                    <div id="topicsSpinner" class="d-flex justify-content-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading topics...</span>
+                        </div>
+                    </div>
+                    <div id="topicsData" class="markdown-content" style="display: none;"></div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
 
-    <!-- Tabbed Sections -->
+    {# Q&A Section #}
     <div class="card">
         <div class="card-header">
-            <ul class="nav nav-tabs card-header-tabs" role="tablist">
-                <li class="nav-item">
-                    <a class="nav-link active" id="qa-tab" data-bs-toggle="tab" href="#qa" role="tab">Q&A</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" id="mps-tab" data-bs-toggle="tab" href="#mps" role="tab">MPs</a>
-                </li>
-            </ul>
+            <h2 class="h5 mb-0">Questions & Answers</h2>
         </div>
         <div class="card-body">
-            <div class="tab-content">
-                <!-- Q&A Tab -->
-                <div class="tab-pane fade show active" id="qa" role="tabpanel">
-                    <div class="chat-container mb-3" id="chatContainer" style="height: 400px; overflow-y: auto;">
-                        <!-- Chat messages will appear here -->
-                    </div>
-                    <form id="qaForm" class="mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control" id="question" 
-                                   placeholder="Ask a question about this session...">
-                            <button type="submit" class="btn btn-primary">Ask</button>
-                        </div>
-                    </form>
-                </div>
-
-                <!-- MPs Tab -->
-                <div class="tab-pane fade" id="mps" role="tabpanel">
-                    <div class="table-responsive">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Party</th>
-                                    <th>Contributions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for mp in session.mps %}
-                                <tr>
-                                    <td>{{ mp.name }}</td>
-                                    <td>{{ mp.party }}</td>
-                                    <td>{{ mp.contributions }}</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+            <div class="chat-container mb-3" id="chatContainer" style="height: 400px; overflow-y: auto;">
+                <!-- Chat messages will appear here -->
             </div>
+            <form id="qaForm" class="mt-3">
+                <div class="input-group">
+                    <input type="text" class="form-control" id="question" 
+                           placeholder="Ask a question about this session...">
+                    <button type="submit" class="btn btn-primary">Ask</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -232,22 +232,37 @@ document.querySelector('[data-bs-toggle="collapse"]').addEventListener('click', 
 });
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Fetch summary
-    const summaryContainer = document.querySelector('.summary-container');
-    const summaryLoading = document.getElementById('summaryLoading');
-    const summaryContent = document.getElementById('summaryContent');
-    
-    fetch(`/session/{{ session.filename }}/summary/`)
-        .then(response => response.json())
-        .then(data => {
-            summaryLoading.style.display = 'none';
-            summaryContent.style.display = 'block';
-            summaryContent.innerHTML = marked.parse(data.summary);
-        })
-        .catch(error => {
-            summaryLoading.innerHTML = '<div class="alert alert-danger">Error loading summary. Please try again later.</div>';
-            console.error('Error:', error);
-        });
+    // Function to fetch topics
+    function fetchTopics() {
+        if (!document.getElementById('topicsData').innerHTML.trim()) {
+            const url = `{% url 'proceedings:session_topics' filename=session.filename %}`;
+            
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    if (document.getElementById('topicsSpinner')) {
+                        document.getElementById('topicsSpinner').style.display = 'none';
+                    }
+                    const topicsDiv = document.getElementById('topicsData');
+                    topicsDiv.innerHTML = data.topics;
+                    topicsDiv.style.display = 'block';
+                })
+                .catch(error => {
+                    if (document.getElementById('topicsSpinner')) {
+                        document.getElementById('topicsSpinner').style.display = 'none';
+                    }
+                    document.getElementById('topicsData').innerHTML = 
+                        '<div class="alert alert-danger">Error loading topics. Please try again later.</div>';
+                    document.getElementById('topicsData').style.display = 'block';
+                    console.error('Error:', error);
+                });
+        }
+    }
+
+    // Initial fetch if no cached content
+    if (!document.getElementById('topicsData').innerHTML.trim()) {
+        fetchTopics();
+    }
 });
 </script>
 {% endblock %}

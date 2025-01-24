@@ -51,6 +51,11 @@ class Session:
                 self._cache[name] = f"Error loading {name}."
         return self._cache[name]
 
+    def _get_pdf_content(self):
+        """Get the PDF content using the summarizer's PDF reader"""
+        pdf_path = os.path.join(settings.MEDIA_ROOT, 'pdf_documents', self.filename)
+        return self.summarizer.read_pdf_content(pdf_path)
+
     @property
     def summary(self):
         return self._get_cached_property('summary', 
@@ -61,7 +66,7 @@ class Session:
         return self._get_cached_property('topics',
             lambda: self.topic_extractor.get_or_generate_topics(
                 self.filename, 
-                self.summarizer.get_or_generate_summary(self.filename).get('summary', '')
+                self._get_pdf_content()  # Pass the PDF content instead of summary
             ).get('topics', ''))
 
     @property
@@ -125,3 +130,55 @@ def get_session_summary(request, filename):
     summarizer = SessionSummarizer()
     summary_data = summarizer.get_or_generate_summary(filename)
     return JsonResponse(summary_data)
+
+@require_http_methods(["GET"])
+def session_topics_view(request, filename):
+    """API endpoint to get topics for a session"""
+    try:
+        session = Session(filename)
+        topics_data = session.topic_extractor.get_or_generate_topics(
+            filename,
+            os.path.join(settings.MEDIA_ROOT, 'pdf_documents', filename)
+        )
+        return JsonResponse({
+            'topics': topics_data.get('topics', ''),
+            'status': 'success'
+        })
+    except Exception as e:
+        print(f"Error getting topics: {e}")
+        return JsonResponse({
+            'error': str(e),
+            'status': 'error'
+        }, status=500)
+
+@method_decorator(csrf_protect, name='dispatch')
+@require_http_methods(["POST"])
+def session_qa_view(request, filename):
+    """API endpoint for Q&A interactions"""
+    try:
+        data = json.loads(request.body)
+        question = data.get('question')
+        chat_history = data.get('chat_history', [])
+        
+        if not question:
+            return JsonResponse({'error': 'Question is required'}, status=400)
+
+        session = Session(filename)
+        qa_service = QAService()
+        
+        answer = qa_service.get_answer(
+            question=question,
+            chat_history=chat_history,
+            filename=session.filename
+        )
+
+        return JsonResponse({
+            'answer': answer,
+            'status': 'success'
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        print(f"Error in Q&A: {e}")  # For debugging
+        return JsonResponse({'error': str(e)}, status=500)

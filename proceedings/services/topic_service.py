@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 import google.generativeai as genai
 from django.conf import settings
-import re
+from PyPDF2 import PdfReader
 
 class TopicExtractor:
     CACHE_DIR = 'media/topics'
@@ -33,22 +33,39 @@ class TopicExtractor:
         with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(topics_data, f, ensure_ascii=False, indent=2)
 
+    def read_pdf_content(self, pdf_path: str) -> str:
+        """Read content from PDF file"""
+        try:
+            reader = PdfReader(pdf_path)
+            text = ""
+            for page in reader.pages:
+                text += page.extract_text() + "\n"
+            return text
+        except Exception as e:
+            print(f"Error reading PDF: {e}")
+            return ""
+
     def extract_topics(self, text: str) -> dict:
-        """Extract topics from the session text using the signpost"""
+        """Extract topics from the session text"""
+        if not text.strip():
+            return {
+                'topics': "Error: No content available to analyze",
+                'generated_at': str(datetime.now()),
+                'sections_found': False
+            }
+
         prompt = """
-        Ανάλυσε το παρακάτω κείμενο της συνεδρίασης και εντόπισε όλα τα νομοθετικά θέματα.
-        
-        ΣΗΜΑΝΤΙΚΟ: Κάθε νέο θέμα ξεκινά με τη φράση "Η σχετική έκθεση". 
-        Χρησιμοποίησε αυτή τη φράση ως σημείο αναφοράς για να εντοπίσεις τα θέματα.
+        Ανάλυσε το παρακάτω κείμενο της κοινοβουλευτικής συνεδρίασης και εντόπισε όλα τα νομοθετικά θέματα.
         
         Για κάθε θέμα που εντοπίζεις, παρέχε:
-        1. Τίτλο του νομοσχεδίου/πρότασης/τροπολογίας (όπως αναφέρεται μετά το "Η σχετική έκθεση")
+        1. Τίτλο του νομοσχεδίου/πρότασης/τροπολογίας
         2. Σκοπό (τι προσπαθεί να επιτύχει)
         3. Προτεινόμενες αλλαγές (τι συγκεκριμένα προτείνεται να αλλάξει)
+        4. Αποτέλεσμα ψηφοφορίας (αν υπάρχει)
         
         Μορφοποίησε την απάντηση σε markdown ως εξής:
         
-        ## [Αριθμός]. [Τίτλος νομοσχεδίου]
+        ## 1. [Τίτλος νομοσχεδίου]
         
         ### Σκοπός
         [Περιγραφή σκοπού]
@@ -56,69 +73,36 @@ class TopicExtractor:
         ### Προτεινόμενες Αλλαγές
         - [Αλλαγή 1]
         - [Αλλαγή 2]
-        κλπ.
         
-        Αν δεν υπάρχουν θέματα που ξεκινούν με "Η σχετική έκθεση", απάντησε:
-        "Δεν εντοπίστηκαν νομοθετικά θέματα με την τυπική μορφή έκθεσης στα πρακτικά."
+        ### Αποτέλεσμα
+        [Αποτέλεσμα ψηφοφορίας αν υπάρχει]
         
         Κείμενο συνεδρίασης:
         {text}
         """
-
-        # First, let's identify all sections starting with "Η σχετική έκθεση"
-        sections = re.split(r'(?=Η σχετική έκθεση)', text)
         
-        # If we don't find any sections, use the entire text
-        if len(sections) <= 1:
-            response = self.model.generate_content(prompt.format(text=text))
+        try:
+            response = self.model.generate_content(prompt.format(text=text[:30000]))
             return {
                 'topics': response.text,
                 'generated_at': str(datetime.now()),
-                'sections_found': 0
+                'sections_found': True
             }
-        
-        # Create a more focused prompt for the identified sections
-        sections_prompt = """
-        Ανάλυσε τα παρακάτω νομοθετικά θέματα που εντοπίστηκαν στη συνεδρίαση.
-        
-        Για κάθε θέμα, παρέχε:
-        1. Τίτλο του νομοσχεδίου/πρότασης/τροπολογίας
-        2. Σκοπό (τι προσπαθεί να επιτύχει)
-        3. Προτεινόμενες αλλαγές (τι συγκεκριμένα προτείνεται να αλλάξει)
-        
-        Θέματα προς ανάλυση:
-        
-        {sections}
-        
-        Μορφοποίησε την απάντηση σε markdown ως εξής:
-        
-        ## [Αριθμός]. [Τίτλος νομοσχεδίου]
-        
-        ### Σκοπός
-        [Περιγραφή σκοπού]
-        
-        ### Προτεινόμενες Αλλαγές
-        - [Αλλαγή 1]
-        - [Αλλαγή 2]
-        κλπ.
-        """
-        
-        # Join the sections with clear separators
-        formatted_sections = "\n\n---ΝΕΟΣ ΤΟΜΕΑΣ---\n\n".join(sections[1:])  # Skip first split if empty
-        
-        response = self.model.generate_content(sections_prompt.format(sections=formatted_sections))
-        
-        return {
-            'topics': response.text,
-            'generated_at': str(datetime.now()),
-            'sections_found': len(sections) - 1
-        }
+        except Exception as e:
+            print(f"Error generating topics: {e}")
+            return {
+                'topics': f"Error generating topics: {str(e)}",
+                'generated_at': str(datetime.now()),
+                'sections_found': False
+            }
 
     def get_or_generate_topics(self, filename: str, text: str) -> dict:
         """Get cached topics or generate new ones"""
         topics_data = self.get_cached_topics(filename)
         
         if topics_data is None:
+            if os.path.isfile(text):
+                text = self.read_pdf_content(text)
             topics_data = self.extract_topics(text)
             self.cache_topics(filename, topics_data)
         
