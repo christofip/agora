@@ -1,0 +1,22 @@
+<div class="card mb-4">
+    <div class="card-header" role="button" data-bs-toggle="collapse" data-bs-target="#{{ section_id }}">
+        <div class="d-flex justify-content-between align-items-center">
+            <h2 class="h5 mb-0">{{ title }}</h2>
+            <span class="collapse-icon">▼</span>
+        </div>
+    </div>
+    <div id="{{ section_id }}" class="collapse show">
+        <div class="card-body">
+            <div class="markdown-content" id="{{ section_id }}_content">
+                {% if content %}
+                    {{ content }}
+                {% else %}
+                    {% include "proceedings/components/loading_spinner.html" %}
+                {% endif %}
+            </div>
+            {% if extra_content %}
+                {{ extra_content }}
+            {% endif %}
+        </div>
+    </div>
+</div> 

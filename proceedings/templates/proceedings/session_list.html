@@ -1,0 +1,33 @@
+{% extends "proceedings/base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Parliamentary Sessions</h1>
+    
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <form method="get" action="" id="sessionForm">
+                <div class="form-group">
+                    <label for="sessionSelect" class="form-label">Select a Session:</label>
+                    <select class="form-select" id="sessionSelect" name="session">
+                        <option value="">Choose a session...</option>
+                        {% for session in sessions %}
+                            <option value="{{ session.filename }}">{{ session.title }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+    document.getElementById('sessionSelect').addEventListener('change', function() {
+        if (this.value) {
+            window.location.href = "{% url 'proceedings:session_detail' filename='PLACEHOLDER' %}".replace('PLACEHOLDER', this.value);
+        }
+    });
+</script>
+{% endblock %}
+{% endblock %}

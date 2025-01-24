@@ -1,0 +1,254 @@
+{% extends "proceedings/base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="container mt-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'proceedings:session_list' %}">Sessions</a></li>
+            <li class="breadcrumb-item active">{{ session.title }}</li>
+        </ol>
+    </nav>
+
+    <h1 class="mb-4">{{ session.title }}</h1>
+
+    <!-- Summary Section -->
+    {% with pdf_button='<a href="'|add:session.url|add:'" class="btn btn-primary mt-3" target="_blank">View Original PDF</a>' %}
+        {% include "proceedings/components/collapsible_section.html" with section_id="summaryContent" title="Session Summary" content=session.summary extra_content=pdf_button %}
+    {% endwith %}
+
+    <!-- Topics Section -->
+    {% include "proceedings/components/collapsible_section.html" with section_id="topicsContent" title="Legislative Topics" content=session.topics %}
+
+    <!-- Tabbed Sections -->
+    <div class="card">
+        <div class="card-header">
+            <ul class="nav nav-tabs card-header-tabs" role="tablist">
+                <li class="nav-item">
+                    <a class="nav-link active" id="qa-tab" data-bs-toggle="tab" href="#qa" role="tab">Q&A</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="mps-tab" data-bs-toggle="tab" href="#mps" role="tab">MPs</a>
+                </li>
+            </ul>
+        </div>
+        <div class="card-body">
+            <div class="tab-content">
+                <!-- Q&A Tab -->
+                <div class="tab-pane fade show active" id="qa" role="tabpanel">
+                    <div class="chat-container mb-3" id="chatContainer" style="height: 400px; overflow-y: auto;">
+                        <!-- Chat messages will appear here -->
+                    </div>
+                    <form id="qaForm" class="mt-3">
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="question" 
+                                   placeholder="Ask a question about this session...">
+                            <button type="submit" class="btn btn-primary">Ask</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- MPs Tab -->
+                <div class="tab-pane fade" id="mps" role="tabpanel">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Party</th>
+                                    <th>Contributions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for mp in session.mps %}
+                                <tr>
+                                    <td>{{ mp.name }}</td>
+                                    <td>{{ mp.party }}</td>
+                                    <td>{{ mp.contributions }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.chat-container {
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    padding: 1rem;
+    background: #f8f9fa;
+}
+
+.message {
+    margin-bottom: 1rem;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+}
+
+.user-message {
+    background: #e3f2fd;
+    margin-left: 20%;
+    margin-right: 5%;
+}
+
+.ai-message {
+    background: #fff;
+    margin-right: 20%;
+    margin-left: 5%;
+    border: 1px solid #dee2e6;
+}
+
+.collapse-icon {
+    transition: transform 0.3s;
+}
+
+.collapsed .collapse-icon {
+    transform: rotate(-90deg);
+}
+
+.spinner-border {
+    width: 3rem;
+    height: 3rem;
+}
+
+#summaryLoading {
+    padding: 2rem;
+}
+
+.markdown-content {
+    line-height: 1.6;
+}
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4 {
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+}
+.markdown-content ul,
+.markdown-content ol {
+    margin-bottom: 1rem;
+    padding-left: 2rem;
+}
+.markdown-content p {
+    margin-bottom: 1rem;
+}
+.markdown-content blockquote {
+    border-left: 4px solid #dee2e6;
+    padding-left: 1rem;
+    margin-left: 0;
+    color: #6c757d;
+}
+</style>
+
+{% block extra_js %}
+<script>
+const chatContainer = document.getElementById('chatContainer');
+const qaForm = document.getElementById('qaForm');
+let chatHistory = [];
+
+function addMessage(content, isUser = false) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${isUser ? 'user-message' : 'ai-message'}`;
+    messageDiv.innerHTML = `
+        <strong>${isUser ? 'You' : 'AI'}:</strong>
+        <p class="mb-0">${content}</p>
+    `;
+    chatContainer.appendChild(messageDiv);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+    
+    chatHistory.push({
+        role: isUser ? 'user' : 'assistant',
+        content: content
+    });
+}
+
+async function getAnswer(question) {
+    try {
+        const response = await fetch(window.location.href, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({
+                question: question,
+                chat_history: chatHistory
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+
+        const data = await response.json();
+        return data.answer;
+    } catch (error) {
+        console.error('Error:', error);
+        return 'Sorry, there was an error processing your question. Please try again.';
+    }
+}
+
+qaForm.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const questionInput = document.getElementById('question');
+    const question = questionInput.value.trim();
+    
+    if (!question) return;
+    
+    // Add user's question to chat
+    addMessage(question, true);
+    questionInput.value = '';
+    
+    // Show loading state
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'message ai-message';
+    loadingDiv.innerHTML = '<div class="spinner-border spinner-border-sm" role="status"></div> Thinking...';
+    chatContainer.appendChild(loadingDiv);
+    
+    // Get and display answer
+    const answer = await getAnswer(question);
+    chatContainer.removeChild(loadingDiv);
+    addMessage(answer, false);
+});
+
+// Add CSRF token to the form
+document.addEventListener('DOMContentLoaded', function() {
+    const csrfToken = document.createElement('input');
+    csrfToken.type = 'hidden';
+    csrfToken.name = 'csrfmiddlewaretoken';
+    csrfToken.value = '{{ csrf_token }}';
+    qaForm.appendChild(csrfToken);
+});
+
+// Handle summary collapse icon rotation
+document.querySelector('[data-bs-toggle="collapse"]').addEventListener('click', function() {
+    this.classList.toggle('collapsed');
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Fetch summary
+    const summaryContainer = document.querySelector('.summary-container');
+    const summaryLoading = document.getElementById('summaryLoading');
+    const summaryContent = document.getElementById('summaryContent');
+    
+    fetch(`/session/{{ session.filename }}/summary/`)
+        .then(response => response.json())
+        .then(data => {
+            summaryLoading.style.display = 'none';
+            summaryContent.style.display = 'block';
+            summaryContent.innerHTML = marked.parse(data.summary);
+        })
+        .catch(error => {
+            summaryLoading.innerHTML = '<div class="alert alert-danger">Error loading summary. Please try again later.</div>';
+            console.error('Error:', error);
+        });
+});
+</script>
+{% endblock %}
+{% endblock %}
